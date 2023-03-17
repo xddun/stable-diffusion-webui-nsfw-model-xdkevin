@@ -4,10 +4,10 @@ import numpy as np
 import torch
 from PIL import Image
 from diffusers.utils import logging
-from scripts.safety_checker import StableDiffusionSafetyChecker
+from modules import scripts
 from transformers import AutoFeatureExtractor
 
-from modules import scripts
+from scripts.safety_checker import StableDiffusionSafetyChecker
 
 logger = logging.get_logger(__name__)
 
@@ -58,7 +58,6 @@ def censor_batch(x):
         try:
             if unsafe_value is True:
                 hwc = x.shape
-                print(f"##   warning_image={warning_image}  ##")
                 y = Image.open(warning_image).convert("RGB").resize((hwc[3], hwc[2]))
                 y = (np.array(y) / 255.0).astype("float32")
                 y = torch.from_numpy(y)
