@@ -1,13 +1,14 @@
 import os.path
 
+import gradio as gr
 import numpy as np
 import torch
 from PIL import Image
 from diffusers.utils import logging
-from modules import scripts
+from scripts.safety_checker import StableDiffusionSafetyChecker
 from transformers import AutoFeatureExtractor
 
-from scripts.safety_checker import StableDiffusionSafetyChecker
+from modules import scripts
 
 logger = logging.get_logger(__name__)
 
@@ -31,7 +32,7 @@ def numpy_to_pil(images):
 
 
 # check and replace nsfw content
-def check_safety(x_image):
+def check_safety(x_image, safety_checker_adj: float):
     global safety_feature_extractor, safety_checker
 
     if safety_feature_extractor is None:
@@ -42,15 +43,15 @@ def check_safety(x_image):
     x_checked_image, has_nsfw_concept = safety_checker(
         images=x_image,
         clip_input=safety_checker_input.pixel_values,
-        safety_checker_adj=0,  # TODO: customize adjustment
+        safety_checker_adj=safety_checker_adj,  # customize adjustment
     )
 
     return x_checked_image, has_nsfw_concept
 
 
-def censor_batch(x):
+def censor_batch(x, safety_checker_adj: float):
     x_samples_ddim_numpy = x.cpu().permute(0, 2, 3, 1).numpy()
-    x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim_numpy)
+    x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim_numpy, safety_checker_adj)
     x = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
 
     index = 0
@@ -80,5 +81,26 @@ class NsfwCheckScript(scripts.Script):
         return scripts.AlwaysVisible
 
     def postprocess_batch(self, p, *args, **kwargs):
+        """
+        Args:
+            p:
+            *args:
+                args[0]: enable_nsfw_filer. True: NSFW filter enabled; False: NSFW filter disabled
+                args[1]: safety_checker_adj
+            **kwargs:
+        Returns:
+            images
+        """
+
         images = kwargs['images']
-        images[:] = censor_batch(images)[:]
+        if args[0] is True:
+            images[:] = censor_batch(images, args[1])[:]
+
+    def ui(self, is_img2img):
+        enable_nsfw_filer = gr.Checkbox(label='Enable NSFW filter',
+                                        value=False,
+                                        elem_id=self.elem_id("enable_nsfw_filer"))
+        safety_checker_adj = gr.Slider(label="Safety checker adjustment",
+                                       minimum=-0.5, maximum=0.5, value=0.0, step=0.001,
+                                       elem_id=self.elem_id("safety_checker_adj"))
+        return [enable_nsfw_filer, safety_checker_adj]
