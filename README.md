@@ -1,9 +1,22 @@
-# Adjustable NSFW filter
+# NSFW filter
 
-:construction:
-An adjustable NSFW filter for [Web UI](https://github.com/AUTOMATIC1111/stable-diffusion-webui). Replaces non-worksafe images with black squares. Install it from UI.
+An adjustable NSFW filter for [AUTOMATIC1111/WebUI](https://github.com/AUTOMATIC1111/stable-diffusion-webui).
+
+![intro](./docs/intro.png)
 
 ## Features
 
-- Customize NSFW filter adjustment
-- Customize warning image
+- Customize NSFW filter safety checker adjustment
+- Replaces Not safe for work (NSFW) images with customize warning image
+
+## Installation
+
+Install it from UI.
+
+## Usage
+
+- `Enable NSFW filter`: Enable/Disable NSFW filter. Disabled by default.
+- `Safety checker adjustment`
+  - Value range: `[-0.5, 0.5]`, increasing this value will make the filter stronger.
+  - Default value: `0`
+  - Step: `0.001`
