@@ -63,7 +63,6 @@ def censor_batch(x, safety_checker_adj: float):
                 y = (np.array(y) / 255.0).astype("float32")
                 y = torch.from_numpy(y)
                 y = torch.unsqueeze(y, 0).permute(0, 3, 1, 2)
-                assert y.shape == x.shape
                 x[index] = y
             index += 1
         except Exception as e:
