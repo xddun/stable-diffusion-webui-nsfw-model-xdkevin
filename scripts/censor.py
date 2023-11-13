@@ -48,7 +48,8 @@ logger.setLevel(loglevel)
 
 # Load ONNX model
 onnx_model_path = os.path.join("extensions", "stable-diffusion-webui-nsfw-model-xdkevin", "scripts", "model_fp16.onnx")
-ort_session = onnxruntime.InferenceSession(onnx_model_path)
+providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+ort_session = onnxruntime.InferenceSession(onnx_model_path, providers=providers)
 input_name = ort_session.get_inputs()[0].name
 output_name = ort_session.get_outputs()[0].name
 
