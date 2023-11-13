@@ -1,105 +1,83 @@
-import os.path
+import logging
+import os
 
-import gradio as gr
+import cv2
 import numpy as np
+import onnxruntime
 import torch
 from PIL import Image
-from diffusers.utils import logging
-from scripts.safety_checker import StableDiffusionSafetyChecker
-from transformers import AutoFeatureExtractor
-
-from modules import scripts
+from modules import scripts, shared
 
 logger = logging.get_logger(__name__)
 
-safety_model_id = "CompVis/stable-diffusion-safety-checker"
-safety_feature_extractor = None
-safety_checker = None
-
-warning_image = os.path.join("extensions", "stable-diffusion-webui-nsfw-filter", "warning", "warning.png")
+# Load ONNX model
+onnx_model_path = os.path.join("extensions", "stable-diffusion-webui-nsfw-model-xdkevin", "scripts", "model_fp16.onnx")
+ort_session = onnxruntime.InferenceSession(onnx_model_path)
+input_name = ort_session.get_inputs()[0].name
+output_name = ort_session.get_outputs()[0].name
 
 
 def numpy_to_pil(images):
-    """
-    Convert a numpy image or a batch of images to a PIL image.
-    """
     if images.ndim == 3:
         images = images[None, ...]
     images = (images * 255).round().astype("uint8")
     pil_images = [Image.fromarray(image) for image in images]
-
     return pil_images
 
 
+def safety_checker_xd(images):
+    global ort_session, input_name, output_name
+    pil_images = numpy_to_pil(images)
+    has_nsfw_concepts = []
+    for image in pil_images:
+        cv2_img = np.array(image)
+        # cv2_img = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB)
+        cv2_img = cv2.resize(cv2_img, (299, 299))
+        cv2_img = cv2_img.astype(np.float16) / 255.0
+        cv2_img = np.expand_dims(cv2_img, axis=0)
+        # Run the ONNX model
+        res_list = ort_session.run([output_name], {input_name: cv2_img})[0].tolist()[0]
+        # print(res_list)
+        # 打印最大值的下标和名称
+        index = np.argmax(res_list)
+        # cls_name = ["drawings", "hentai", "neutral", "porn", "sexy"]
+
+        if index in [1, 3, 4]:
+            has_nsfw_concepts.append(True)
+        else:
+            has_nsfw_concepts.append(False)
+    if any(has_nsfw_concepts):
+        logger.warning(
+            "Potential NSFW content was detected in one or more images. A black image will be returned instead."
+            " Try again with a different prompt and/or seed."
+        )
+    for idx, has_nsfw_concept in enumerate(has_nsfw_concepts):
+        if has_nsfw_concept:
+            images[idx] = np.zeros(images[idx].shape)
+    return images, has_nsfw_concepts
+
+
 # check and replace nsfw content
-def check_safety(x_image, safety_checker_adj: float):
-    global safety_feature_extractor, safety_checker
-
-    if safety_feature_extractor is None:
-        safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
-        safety_checker = StableDiffusionSafetyChecker.from_pretrained(safety_model_id)
-
-    safety_checker_input = safety_feature_extractor(numpy_to_pil(x_image), return_tensors="pt")
-    x_checked_image, has_nsfw_concept = safety_checker(
-        images=x_image,
-        clip_input=safety_checker_input.pixel_values,
-        safety_checker_adj=safety_checker_adj,  # customize adjustment
-    )
-
+def check_safety(x_image):
+    x_checked_image, has_nsfw_concept = safety_checker_xd(images=x_image)
     return x_checked_image, has_nsfw_concept
 
 
-def censor_batch(x, safety_checker_adj: float):
+def censor_batch(x):
     x_samples_ddim_numpy = x.cpu().permute(0, 2, 3, 1).numpy()
-    x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim_numpy, safety_checker_adj)
+    x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim_numpy)
     x = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
-
-    index = 0
-    for unsafe_value in has_nsfw_concept:
-        try:
-            if unsafe_value is True:
-                hwc = x.shape
-                y = Image.open(warning_image).convert("RGB").resize((hwc[3], hwc[2]))
-                y = (np.array(y) / 255.0).astype("float32")
-                y = torch.from_numpy(y)
-                y = torch.unsqueeze(y, 0).permute(0, 3, 1, 2)
-                x[index] = y
-            index += 1
-        except Exception as e:
-            logger.warning(e)
-            index += 1
-
     return x
 
 
 class NsfwCheckScript(scripts.Script):
     def title(self):
-        return "NSFW check"
+        return "xd NSFW check"
 
     def show(self, is_img2img):
         return scripts.AlwaysVisible
 
     def postprocess_batch(self, p, *args, **kwargs):
-        """
-        Args:
-            p:
-            *args:
-                args[0]: enable_nsfw_filer. True: NSFW filter enabled; False: NSFW filter disabled
-                args[1]: safety_checker_adj
-            **kwargs:
-        Returns:
-            images
-        """
-
         images = kwargs['images']
-        if args[0] is True:
-            images[:] = censor_batch(images, args[1])[:]
+        images[:] = censor_batch(images)[:]
 
-    def ui(self, is_img2img):
-        enable_nsfw_filer = gr.Checkbox(label='Enable NSFW filter',
-                                        value=False,
-                                        elem_id=self.elem_id("enable_nsfw_filer"))
-        safety_checker_adj = gr.Slider(label="Safety checker adjustment",
-                                       minimum=-0.5, maximum=0.5, value=0.0, step=0.001,
-                                       elem_id=self.elem_id("safety_checker_adj"))
-        return [enable_nsfw_filer, safety_checker_adj]
