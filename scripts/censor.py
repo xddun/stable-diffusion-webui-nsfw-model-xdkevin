@@ -74,17 +74,17 @@ def safety_checker_xd(images):
         cv2_img = np.expand_dims(cv2_img, axis=0)
         # Run the ONNX model
         res_list = ort_session.run([output_name], {input_name: cv2_img})[0].tolist()[0]
-        logger.warning(f"Results for images {idx}: {res_list}")
+        logger.info(f"Results for images {idx}: {res_list}")
         # print(res_list)
         # 打印最大值的下标和名称
         index = np.argmax(res_list)
         # cls_name = ["drawings", "hentai", "neutral", "porn", "sexy"]
 
-        if index == 1 and res_list[index] > 0.5:
+        if index == 1 and res_list[index] > 0.3:
             has_nsfw_concepts.append(True)
-        elif index == 3 and res_list[index] > 0.5:
+        elif index == 3 and res_list[index] > 0.3:
             has_nsfw_concepts.append(True)
-        elif index == 4 and res_list[index] > 0.6:
+        elif index == 4 and res_list[index] > 0.5:
             has_nsfw_concepts.append(True)
         else:
             has_nsfw_concepts.append(False)
