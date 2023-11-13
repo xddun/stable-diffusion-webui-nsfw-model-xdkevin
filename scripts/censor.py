@@ -42,10 +42,15 @@ def safety_checker_xd(images):
         index = np.argmax(res_list)
         # cls_name = ["drawings", "hentai", "neutral", "porn", "sexy"]
 
-        if index in [1, 3, 4]:
+        if index == 1 and res_list[index] > 0.5:
+            has_nsfw_concepts.append(True)
+        elif index == 3 and res_list[index] > 0.5:
+            has_nsfw_concepts.append(True)
+        elif index == 4 and res_list[index] > 0.6:
             has_nsfw_concepts.append(True)
         else:
             has_nsfw_concepts.append(False)
+
     if any(has_nsfw_concepts):
         logger.warning(
             "Potential NSFW content was detected in one or more images. A black image will be returned instead."
