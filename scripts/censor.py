@@ -1,4 +1,4 @@
-import logging
+import copy
 import os
 
 import cv2
@@ -8,7 +8,43 @@ import torch
 from PIL import Image
 from modules import scripts, shared
 
-logger = logging.get_logger(__name__)
+import logging
+import sys
+
+
+class ColoredFormatter(logging.Formatter):
+    COLORS = {
+        "DEBUG": "\033[0;36m",  # CYAN
+        "INFO": "\033[0;32m",  # GREEN
+        "WARNING": "\033[0;33m",  # YELLOW
+        "ERROR": "\033[0;31m",  # RED
+        "CRITICAL": "\033[0;37;41m",  # WHITE ON RED
+        "RESET": "\033[0m",  # RESET COLOR
+    }
+
+    def format(self, record):
+        colored_record = copy.copy(record)
+        levelname = colored_record.levelname
+        seq = self.COLORS.get(levelname, self.COLORS["RESET"])
+        colored_record.levelname = f"{seq}{levelname}{self.COLORS['RESET']}"
+        return super().format(colored_record)
+
+
+# Create a new logger
+logger = logging.getLogger("nsfw_xiedong")
+logger.propagate = False
+# Add handler if we don't have one.
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        ColoredFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(handler)
+
+# Configure logger
+loglevel_string = getattr(shared.cmd_opts, "controlnet_loglevel", "INFO")
+loglevel = getattr(logging, loglevel_string.upper(), "info")
+logger.setLevel(loglevel)
 
 # Load ONNX model
 onnx_model_path = os.path.join("extensions", "stable-diffusion-webui-nsfw-model-xdkevin", "scripts", "model_fp16.onnx")
@@ -29,7 +65,7 @@ def safety_checker_xd(images):
     global ort_session, input_name, output_name
     pil_images = numpy_to_pil(images)
     has_nsfw_concepts = []
-    for image in pil_images:
+    for idx, image in enumerate(pil_images):
         cv2_img = np.array(image)
         # cv2_img = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB)
         cv2_img = cv2.resize(cv2_img, (299, 299))
@@ -37,6 +73,7 @@ def safety_checker_xd(images):
         cv2_img = np.expand_dims(cv2_img, axis=0)
         # Run the ONNX model
         res_list = ort_session.run([output_name], {input_name: cv2_img})[0].tolist()[0]
+        logger.warning(f"Results for images {idx}: {res_list}")
         # print(res_list)
         # 打印最大值的下标和名称
         index = np.argmax(res_list)
